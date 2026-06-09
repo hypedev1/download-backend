@@ -1,0 +1,3 @@
+# Nixpacks configuration for Railway deployment
+[phases.setup]
+nixPkgs = ["nodePackages.npm", "ffmpeg", "yt-dlp"]
