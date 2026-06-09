@@ -84,8 +84,9 @@ export async function registerRoutes(fastify: FastifyInstance) {
       let downloadUrl = job.downloadUrl;
       if (downloadUrl && downloadUrl.startsWith("/file/")) {
         // Construct the VPS endpoint URL
-        const protocol = request.headers["x-forwarded-proto"] || "http";
         const host = request.headers["host"] || `${config.HOST}:${config.PORT}`;
+        // Force HTTPS in production, allow HTTP on localhost
+        const protocol = host.includes("localhost") || host.includes("127.0.0.1") ? "http" : "https";
         downloadUrl = `${protocol}://${host}${downloadUrl}`;
       }
 

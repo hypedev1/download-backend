@@ -48,8 +48,26 @@ function getBinPaths() {
   return { binDir, ytDlp, ffmpeg };
 }
 
+let envCookiesWritten = false;
+
 // Find cookies path
 function getCookiesPath(): string | null {
+  // Check if env variable is set
+  if (process.env.YT_DLP_COOKIES_CONTENT) {
+    const tempDir = fs.existsSync("/tmp") ? "/tmp" : path.resolve("./downloads-temp");
+    const envCookiesPath = path.join(tempDir, "cookies_env.txt");
+    try {
+      if (!envCookiesWritten) {
+        fs.writeFileSync(envCookiesPath, process.env.YT_DLP_COOKIES_CONTENT, "utf8");
+        envCookiesWritten = true;
+        logger.info(`Successfully wrote YT_DLP_COOKIES_CONTENT to ${envCookiesPath}`);
+      }
+      return envCookiesPath;
+    } catch (err) {
+      logger.error("Failed to write YT_DLP_COOKIES_CONTENT to file:", err);
+    }
+  }
+
   // Check parent root cookies
   const parentCookies = path.resolve(process.cwd(), "../cookies.txt");
   if (fs.existsSync(parentCookies)) {
