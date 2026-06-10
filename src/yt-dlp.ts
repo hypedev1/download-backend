@@ -1,7 +1,8 @@
-import { execFile, spawn } from "node:child_process";
+import { exec, execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as https from "node:https";
 import { logger } from "./logger.js";
 
 const execFileAsync = promisify(execFile);
@@ -266,3 +267,107 @@ export function downloadMediaStream(
     });
   });
 }
+
+// Try to require ffmpeg-static dynamically in ESM
+async function getFfmpegStaticPath(): Promise<string | null> {
+  try {
+    const ffmpegStatic = (await import("ffmpeg-static")) as any;
+    return ffmpegStatic.default || ffmpegStatic || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+export async function ensureBinaries(): Promise<void> {
+  const localBinDir = path.resolve("./bin");
+  if (!fs.existsSync(localBinDir)) {
+    fs.mkdirSync(localBinDir, { recursive: true });
+  }
+
+  const isWin = process.platform === "win32";
+  const ytDlpFilename = isWin ? "yt-dlp.exe" : "yt-dlp";
+  const ffmpegFilename = isWin ? "ffmpeg.exe" : "ffmpeg";
+
+  const localYtDlp = path.join(localBinDir, ytDlpFilename);
+  const localFfmpeg = path.join(localBinDir, ffmpegFilename);
+
+  // Check if globally available
+  const hasGlobalYtDlp = await checkCommand("yt-dlp --version");
+  const hasGlobalFfmpeg = await checkCommand("ffmpeg -version");
+
+  if (!hasGlobalFfmpeg && !fs.existsSync(localFfmpeg)) {
+    logger.info("ffmpeg not found globally. Copying from ffmpeg-static...");
+    const staticPath = await getFfmpegStaticPath();
+    if (staticPath && fs.existsSync(staticPath)) {
+      try {
+        fs.copyFileSync(staticPath, localFfmpeg);
+        if (!isWin) {
+          fs.chmodSync(localFfmpeg, "755");
+        }
+        logger.info("ffmpeg binary copied successfully.");
+      } catch (err: any) {
+        logger.error(`Failed to copy ffmpeg binary: ${err.message}`);
+      }
+    } else {
+      logger.warn("ffmpeg-static not found. FFmpeg operations may fail.");
+    }
+  }
+
+  if (!hasGlobalYtDlp && !fs.existsSync(localYtDlp)) {
+    logger.info("yt-dlp not found globally. Downloading standalone binary...");
+    let url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux";
+    if (process.platform === "darwin") {
+      url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos";
+    } else if (isWin) {
+      url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
+    }
+
+    try {
+      await downloadFile(url, localYtDlp);
+      if (!isWin) {
+        fs.chmodSync(localYtDlp, "755");
+      }
+      logger.info("yt-dlp downloaded and set up successfully.");
+    } catch (err: any) {
+      logger.error(`Failed to download yt-dlp: ${err.message}`);
+    }
+  }
+}
+
+function checkCommand(cmd: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    exec(cmd, (error) => {
+      resolve(!error);
+    });
+  });
+}
+
+function downloadFile(url: string, dest: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    function get(downloadUrl: string) {
+      https.get(downloadUrl, (response) => {
+        if (response.statusCode === 302 || response.statusCode === 301) {
+          get(response.headers.location!);
+          return;
+        }
+
+        if (response.statusCode !== 200) {
+          reject(new Error(`Failed to download file (Status Code ${response.statusCode})`));
+          return;
+        }
+
+        const file = fs.createWriteStream(dest);
+        response.pipe(file);
+
+        file.on("finish", () => {
+          file.close();
+          resolve();
+        });
+      }).on("error", (err) => {
+        reject(err);
+      });
+    }
+    get(url);
+  });
+}
+
