@@ -3,7 +3,7 @@ import cors from "@fastify/cors";
 import { config } from "./config.js";
 import { registerRoutes } from "./routes.js";
 import { logger } from "./logger.js";
-import { ensureBinaries } from "./yt-dlp.js";
+import { ensureBinaries, verifyBinaries } from "./yt-dlp.js";
 
 const fastify = Fastify({
   logger: false, // We use our custom formatted logger
@@ -14,6 +14,7 @@ async function start() {
     // Self-healing binary checks
     logger.info("Verifying system binaries...");
     await ensureBinaries();
+    await verifyBinaries();
 
     // Enable CORS
     await fastify.register(cors, {

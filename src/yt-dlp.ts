@@ -392,3 +392,45 @@ function downloadFile(url: string, dest: string): Promise<void> {
   });
 }
 
+export function verifyBinaries(): Promise<void> {
+  return new Promise((resolve) => {
+    logger.info("=== STARTUP BINARY VERIFICATION ===");
+    
+    const { ytDlp, ffmpeg } = getBinPaths();
+    
+    // 1. Verify yt-dlp location and version
+    const ytDlpWhichCmd = process.platform === "win32" ? `where ${ytDlp}` : `which ${ytDlp} 2>/dev/null || echo "not found"`;
+    exec(ytDlpWhichCmd, (err, stdout) => {
+      const pathRes = stdout ? stdout.trim() : "not found";
+      logger.info(`Binary Path: ${ytDlp} resolved to: ${pathRes}`);
+
+      exec(`${ytDlp} --version`, (errVer, stdoutVer) => {
+        if (errVer) {
+          logger.error(`Verification Failed: Unable to execute ${ytDlp} --version. Error: ${errVer.message}`);
+        } else {
+          logger.info(`Binary Version: ${ytDlp} version: ${stdoutVer.trim()}`);
+        }
+
+        // 2. Verify ffmpeg location and version
+        const ffmpegWhichCmd = process.platform === "win32" ? `where ${ffmpeg}` : `which ${ffmpeg} 2>/dev/null || echo "not found"`;
+        exec(ffmpegWhichCmd, (errFF, stdoutFF) => {
+          const ffmpegPathRes = stdoutFF ? stdoutFF.trim() : "not found";
+          logger.info(`Binary Path: ${ffmpeg} resolved to: ${ffmpegPathRes}`);
+
+          exec(`${ffmpeg} -version`, (errVerFF, stdoutVerFF) => {
+            if (errVerFF) {
+              logger.error(`Verification Failed: Unable to execute ${ffmpeg} -version. Error: ${errVerFF.message}`);
+            } else {
+              const firstLine = stdoutVerFF.split("\n")[0];
+              logger.info(`Binary Version: ${ffmpeg} version: ${firstLine.trim()}`);
+            }
+            logger.info("=== END OF BINARY VERIFICATION ===");
+            resolve();
+          });
+        });
+      });
+    });
+  });
+}
+
+
