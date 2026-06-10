@@ -26,18 +26,19 @@ export interface ExtractedMetadata {
 
 // Locate binaries
 function getBinPaths() {
-  // Check local project bin directory first (useful for dev)
+  const isWin = process.platform === "win32";
+  const localBinDir = isWin ? path.resolve(process.cwd(), "./bin") : "/tmp/bin";
   const devBinDir = path.resolve(process.cwd(), "../bin");
-  const localBinDir = path.resolve(process.cwd(), "./bin");
   
   let binDir = "";
   if (fs.existsSync(devBinDir)) {
     binDir = devBinDir;
   } else if (fs.existsSync(localBinDir)) {
     binDir = localBinDir;
+  } else {
+    binDir = localBinDir;
   }
 
-  const isWin = process.platform === "win32";
   const ytDlp = binDir && fs.existsSync(path.join(binDir, isWin ? "yt-dlp.exe" : "yt-dlp"))
     ? path.join(binDir, isWin ? "yt-dlp.exe" : "yt-dlp")
     : "yt-dlp";
@@ -279,12 +280,13 @@ async function getFfmpegStaticPath(): Promise<string | null> {
 }
 
 export async function ensureBinaries(): Promise<void> {
-  const localBinDir = path.resolve("./bin");
+  const isWin = process.platform === "win32";
+  const localBinDir = isWin ? path.resolve("./bin") : "/tmp/bin";
+  
   if (!fs.existsSync(localBinDir)) {
     fs.mkdirSync(localBinDir, { recursive: true });
   }
 
-  const isWin = process.platform === "win32";
   const ytDlpFilename = isWin ? "yt-dlp.exe" : "yt-dlp";
   const ffmpegFilename = isWin ? "ffmpeg.exe" : "ffmpeg";
 
@@ -345,27 +347,46 @@ function checkCommand(cmd: string): Promise<boolean> {
 function downloadFile(url: string, dest: string): Promise<void> {
   return new Promise((resolve, reject) => {
     function get(downloadUrl: string) {
-      https.get(downloadUrl, (response) => {
-        if (response.statusCode === 302 || response.statusCode === 301) {
-          get(response.headers.location!);
-          return;
-        }
+      try {
+        const parsedUrl = new URL(downloadUrl);
+        const options = {
+          protocol: parsedUrl.protocol,
+          hostname: parsedUrl.hostname,
+          path: parsedUrl.pathname + parsedUrl.search,
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          },
+        };
 
-        if (response.statusCode !== 200) {
-          reject(new Error(`Failed to download file (Status Code ${response.statusCode})`));
-          return;
-        }
+        https.get(options, (response) => {
+          if (response.statusCode === 302 || response.statusCode === 301) {
+            get(response.headers.location!);
+            return;
+          }
 
-        const file = fs.createWriteStream(dest);
-        response.pipe(file);
+          if (response.statusCode !== 200) {
+            reject(new Error(`Failed to download file (Status Code ${response.statusCode})`));
+            return;
+          }
 
-        file.on("finish", () => {
-          file.close();
-          resolve();
+          const file = fs.createWriteStream(dest);
+          response.pipe(file);
+
+          file.on("finish", () => {
+            file.close();
+            resolve();
+          });
+
+          file.on("error", (err) => {
+            fs.unlink(dest, () => {});
+            reject(err);
+          });
+        }).on("error", (err) => {
+          reject(err);
         });
-      }).on("error", (err) => {
+      } catch (err) {
         reject(err);
-      });
+      }
     }
     get(url);
   });
